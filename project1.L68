@@ -1,0 +1,842 @@
+00001000 Starting Address
+Assembler used: EASy68K Editor/Assembler v5.16.01
+Created On: 4/3/2026 23:16:19
+
+00000000                             1  *--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+00000000                             2  * Title      :  PROJECT1 IRONBOUND
+00000000                             3  * Written by :  Callum Matthews C00306572
+00000000                             4  * Date       :  Started on the 19th of February. 
+00000000                             5  * Description:  An alternative physics game where gravity works against you. Collect scrap metal to weigh yourself down, and fight off enemies competing for the same resources.
+00000000                             6  *
+00000000                             7  * Issues encountered: When loading health or mass into D1, it would show a number like 65000. This is because MOVE.B only overwrites lower 8 bits of D1.
+00000000                             8  * Resolution:   To resolve, I used CLR.W D1 to set the lower 16 bits of D1 to 0, basically removing any garbage from earlier that was there, ensuring I can print or store only the value i need.
+00000000                             9  *               I did not use AI to resolve this issue. It was a very simple fix, i just forgot to clear the registers when i started writing this program.
+00000000                            10  *
+00000000                            11  * IMPORTANT NOTE: As can be seen under my variables, i store enemy health as an array, and each day we take a value from that array to give to the enemy we encounter. The enemy health depends on what day you are on.
+00000000                            12  *                 As each day you can choose whether to stay home or venture out, you may not encounter an enemy depending on this choice.
+00000000                            13  *                 Therefore, i need to chose enemy health from this array based off what day you are on. I could not figure this out myself, and ran into errors when assembling, and this was my major hurdle.
+00000000                            14  *                 I also needed help resolving a random number. My plan was to use time trap 8 to get time since midnight, which is different every time game is ran, but it returned a very long number.
+00000000                            15  *                 I needed to trim it down so its easier to allocate chance, so by making it a number 0 - 99, 100 numbers, i could set different ranges as different chances. 0 - 9 is 10%, 10 - 19 is 10% and so on.
+00000000                            16  *
+00000000                            17  * Resoltion:      To resolve this array issue, and the time issue, i had to use AI to get help. The four subroutines that needed AI help are as follows:
+00000000                            18  *
+00000000                            19  *                 GET_ENEMY_HP
+00000000                            20  *                 HP_LOOP
+00000000                            21  *                 HP_FOUND
+00000000                            22  *                 RANDOM_0_99 ------> i planned on using the time trap 8 regardless, just needed to figure out how to go about trimming number as time will give me a different number each time game is ran, appearing random
+00000000                            23  *
+00000000                            24  *                 I do now understand how these subroutines work. I have comments beside them explaining as such. However, it took AI help to explain how to go about navigating the array based off day, as i wanted to do.
+00000000                            25  *                 I felt it nesisary to highlight that these subroutines were AI assisted.
+00000000                            26  *                 For these four subroutines mentioned above, the AI used was ChatGpt. 
+00000000                            27  *                 I did not use it beyond the aforementioned subroutines above.
+00000000                            28  *
+00000000                            29  * Known bugs:   As of now, I have no confirmed known bugs. My main issue was not clearing registers and the issue with my choice to base enemy health off an array These are now both resolved.
+00000000                            30  *               I also had gameplay loop issues with random events messages printing, but now resolved.
+00000000                            31  *               However, random event selection works from time, with the trap task 8. So theoretically, event chance can be based off the time at which you run the code? I havent had issues with this, but i beleive that it could provide an issue?
+00000000                            32  *
+00000000                            33  *--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+00001000                            34      ORG    $1000
+00001000                            35  START:                  ; first instruction of program
+00001000  13FC 0001 0000132A        36      MOVE.B  #1,DAY              ; initialise day counter to 1, because without it, when i restart program without closing it, day stays at 5
+00001008  13FC 001E 00001329        37      MOVE.B #30, PLAYER_MASS     ; initialise mass to 30 before day 1. Therefor if you do not leave safe house any day you get a bad ending
+00001010  13FC 003C 00001328        38      MOVE.B #60, PLAYER_HEALTH   ; initialise health to 60 before day 1
+00001018                            39      
+00001018                            40      
+00001018  6100 0006                 41      BSR     WELCOME     ; branch to welcome to start game
+0000101C                            42  
+0000101C  6100 0062                 43      BSR     GAME_LOOP   ; branch to GAME_LOOP subroutine
+00001020                            44  
+00001020                            45  
+00001020                            46      
+00001020                            47  
+00001020                            48  
+00001020                            49  *--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+00001020                            50  *
+00001020                            51  *WELCOME. Starts game by printing title card and lore message.
+00001020                            52  *Pause for key press to continue
+00001020                            53  *
+00001020                            54  *--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+00001020                            55  WELCOME:
+00001020  6100 003E                 56      BSR CLEAR_SCREEN    ; Branch to clear screen
+00001024                            57      
+00001024  43F9 00001922             58      LEA MSG_TITLECARD, A1   ; load effective address of title card to a1
+0000102A  6100 001C                 59      BSR PRINT_STR           ; branch to print string, as now a1 contains the address of the string i want to print
+0000102E                            60      
+0000102E  43F9 000019F5             61      LEA MSG_GAME_START, A1  ; load effective address of game start message to a1
+00001034  6100 0012                 62      BSR PRINT_STR           ; branch to print string, as now new message address in a1
+00001038                            63      
+00001038  43F9 00001D27             64      LEA MSG_OBJECTIVE, A1   ; load effective address of objective message to a1
+0000103E  6100 0008                 65      BSR PRINT_STR           ; branch to print string, as again i have a new message to print from address a1
+00001042                            66      
+00001042  6100 000C                 67      BSR CONTINUE            ; Branch to subroutine, in this case CONTINUE
+00001046  4E75                      68      RTS                     ; Return to subroutine
+00001048                            69  
+00001048                            70  *--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+00001048                            71  ;
+00001048                            72  ; PRINT_STR used to print any message
+00001048                            73  ; uses TRAP #15 to print message
+00001048                            74  ;  Allows me to not have to type this everytime, so i am calling a function for it to reduce lines of code
+00001048                            75  *--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+00001048                            76  PRINT_STR:
+00001048  103C 000E                 77      MOVE.B #14, D0  ; place literal 14 in register D0. a1 should already contain address of string to print at this point of calling this function   
+0000104C  4E4F                      78      TRAP #15        ; kernal call will make the assembler print what i want. TRAP AND INTERPERATE VALUE IN D0: comment from starter kit
+0000104E  4E75                      79      RTS             ; return to subroutine
+00001050                            80     
+00001050                            81  *--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+00001050                            82  ;
+00001050                            83  ; CONTINUE: press any key prompt and wait for my input
+00001050                            84  ;   using 4 as it is instruction to read user input stored in D1. Load 4 into D0 and trap to execute
+00001050                            85  ;
+00001050                            86  *--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+00001050                            87  CONTINUE:
+00001050  43F9 000018FC             88      LEA MSG_CONTINUE, A1    ; load effective address of contnue message to a1
+00001056  61F0                      89      BSR PRINT_STR           ; branch to print it
+00001058                            90      
+00001058  103C 0004                 91      MOVE.B #4, D0   ; read input from user, as continue message prompts for it
+0000105C  4E4F                      92      TRAP #15        ; kernal call, trap 15 function 4
+0000105E  4E75                      93      RTS             ; return
+00001060                            94      
+00001060                            95  *--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+00001060                            96  ;
+00001060                            97  ; CLEAR_SCREEN: clears the screen of any text there, subroutine to save writing every time as used often
+00001060                            98  ;
+00001060                            99  *--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+00001060                           100  CLEAR_SCREEN:
+00001060  103C 000B                101      MOVE.B #11, D0      ; function 11 will clear the terminal screen
+00001064  323C FF00                102      MOVE.W #$FF00, D1   ; resets screen with a colour, but here im doing default FF is high 00 is low. From starter kit
+00001068  4E4F                     103      TRAP #15            ; interperate value in d0, which is 11 and execute
+0000106A  4E75                     104      RTS                 ; return to subroutine
+0000106C                           105  
+0000106C                           106  
+0000106C                           107  ; -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+0000106C                           108  ; Some AI assistance in this subroutine, outlined in above header comment.
+0000106C                           109  ; 
+0000106C                           110  ; RANDOM_0_99 random number generator, returns current time since midnight, but then trims it down to a number 0 - 99
+0000106C                           111  ; returns a number in range 0 - 99 into D0, so 100 possible numbers, making it easier to set percentages. 0 - 9 is a 10 % chance as it is first 10 possible numbers etc.
+0000106C                           112  ;
+0000106C                           113  ; -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+0000106C                           114  RANDOM_0_99:
+0000106C  103C 0008                115      MOVE.B  #8,D0      ; trap task 8 = time since midnight
+00001070  4E4F                     116      TRAP    #15        ; trap reads task in D0, which will put time since midnight into D1, so D1.L = time value
+00001072  2001                     117      MOVE.L  D1,D0      ; copy time into D0 so we can trip it down. currently it is a long number
+00001074                           118  
+00001074                           119      ; ai assisted part, DIVU, SWAP AND ANDI
+00001074  80FC 0064                120      DIVU    #100,D0    ; divide by 100, DIVU provides a remainder and a quotuient, so upper word is remainder, lower is quotient. I want the remainder
+00001078  4840                     121      SWAP    D0         ; swap the remainder and quotient around, so remainder is in the lower word
+0000107A  0240 00FF                122      ANDI.W  #$00FF,D0  ; bitwise and immediate to mask value, keeping only lower 8 bits and clears rest of lower word, so can only be left with number in range 0 - 99
+0000107E                           123      
+0000107E  4E75                     124      RTS                ; return to subroutine, with a value 0 - 99 stored in D0
+00001080                           125  
+00001080                           126  *--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+00001080                           127  ;
+00001080                           128  ; BEGIN GAMEPLAY LOOP
+00001080                           129  ; subroutines used in day to day game loop below:
+00001080                           130  ;
+00001080                           131  *--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+00001080                           132  GAME_LOOP:
+00001080                           133  DAY_LOOP:
+00001080  6100 005E                134      BSR     START_DAY        ; show status + day text + ask 1/2 and do rest/combat inside
+00001084                           135      
+00001084                           136    
+00001084                           137      ; The following are my end of day checks 
+00001084                           138      ; float-away ending if mass < 40
+00001084  1039 00001329            139      MOVE.B  PLAYER_MASS,D0      ; move player mass into D0
+0000108A  B03C 0028                140      CMP.B   #40,D0              ; compare contents of player mass to 40
+0000108E  6D00 001A                141      BLT     END_BAD_FLOAT       ; branch if less than to bad ending "float away"
+00001092                           142  
+00001092                           143      ; if day = 5, must resolve ending type, either good or neutral
+00001092  1039 0000132A            144      MOVE.B  DAY,D0              ; move day count into D0
+00001098  B03C 0005                145      CMP.B   #5,D0               ; compare day count to 5
+0000109C  6700 0018                146      BEQ     END_RESOLVE         ; if day = 5, branch to ending resolve to pick between good or neutral ending
+000010A0                           147  
+000010A0                           148      ; in java: day++, i am increasing the day counter
+000010A0  5239 0000132A            149      ADD.B   #1,DAY          ; add 1 to the day counter
+000010A6  61A8                     150      BSR     CONTINUE        ; branch subroutine CONTINUE
+000010A8  60D6                     151      BRA     DAY_LOOP        ; branch DAY_LOOP
+000010AA                           152  
+000010AA                           153  END_BAD_FLOAT:
+000010AA  43F9 0000203E            154      LEA     MSG_BADENDING,A1    ;Load float away ending/ bad ending
+000010B0  6196                     155      BSR     PRINT_STR           ; branch to print str routine to output the ending message
+000010B2  6000 0270                156      BRA     GAME_END            ; return from print_str and then immediatly branch to GAME_END, which is SIMHAULT
+000010B6                           157  
+000010B6                           158  END_RESOLVE:
+000010B6                           159      ; mass >= 40 already, now check good or neutral
+000010B6  1039 00001329            160      MOVE.B  PLAYER_MASS,D0  ; move player mass to D0 to check
+000010BC  B03C 004B                161      CMP.B   #75,D0          ; with compare, check if mass greater than 75, then
+000010C0  6C00 0010                162      BGE     END_GOOD        ; branch to good ending
+000010C4                           163  
+000010C4  43F9 000025BF            164      LEA     MSG_NEUTRALEND,A1   ; else, if less than 75, load neutral ending message and then
+000010CA  6100 FF7C                165      BSR     PRINT_STR           ; use PRINT_STR subroutine to print it to screen
+000010CE  6000 0254                166      BRA     GAME_END            ; Finally jump to game end for SIMHAULT
+000010D2                           167  
+000010D2                           168  END_GOOD:
+000010D2  43F9 000022F8            169      LEA     MSG_GOODENDING,A1   ; if you jump here from resolve, load good ending message
+000010D8  6100 FF6E                170      BSR     PRINT_STR           ; then print it
+000010DC  6000 0246                171      BRA     GAME_END            ; again, once ending decided jump to end game which is SIMHAULT
+000010E0                           172  
+000010E0                           173  
+000010E0                           174  ; Start each day. Will branch to combat or rest based off player choice. Also keep track of day count.
+000010E0                           175  START_DAY:
+000010E0                           176     
+000010E0  6100 FF7E                177      BSR CLEAR_SCREEN        ; Clear the screen for a new message
+000010E4                           178      
+000010E4                           179         
+000010E4                           180      ;Print mass message, prints on new line the word MASS: 
+000010E4  43F9 00001DE2            181      LEA MSG_MASS, A1        ; load mass message into A1
+000010EA  6100 FF5C                182      BSR PRINT_STR           ; branch to print subroutine to display it
+000010EE                           183      
+000010EE                           184    
+000010EE                           185      
+000010EE                           186      ;Print current mass number directly beside message
+000010EE  4241                     187      CLR.W D1                    ; clearing d1 because when i didnt do this i got some number like 65200. This resloved my issue with garbage numbers being displayed
+000010F0  1239 00001329            188      MOVE.B PLAYER_MASS, D1      ; move player mass into D1
+000010F6  103C 0003                189      MOVE.B #3, D0               ; move 3 into D0, function 3 is to print number in D1, in this case print player mass
+000010FA  4E4F                     190      TRAP #15                    ; trap kernal call to use function 3 in D0
+000010FC                           191      
+000010FC  43F9 0000191F            192      LEA CRLF, A1                ; load CRLF message
+00001102  6100 FF44                193      BSR PRINT_STR               ; jump to PRINT so it can be put on screen to add a new line, or a gap, between other messages
+00001106                           194      
+00001106                           195      
+00001106                           196      ;Print health message, prints new line saying VIGOR:
+00001106  43F9 00001DEB            197      LEA MSG_HEALTH, A1          ; load message into A1
+0000110C  6100 FF3A                198      BSR PRINT_STR               ; use print subroutine to print it
+00001110                           199      
+00001110                           200      
+00001110                           201      ;Print current health or vigor number directly beside message
+00001110  4241                     202      CLR.W D1                    ; clearing d1 because when i didnt do this i got some number like 65200 on screen
+00001112  1239 00001328            203      MOVE.B PLAYER_HEALTH, D1    ; so move player health/vigor to D1
+00001118  103C 0003                204      MOVE.B #3, D0               ; Move 3 into D0. 3 is used to print a number stored in D1.
+0000111C  4E4F                     205      TRAP #15                    ; Kernal call, checks D0 for for a function to do, in this case D0 has 3, which is print number in D1.
+0000111E                           206      
+0000111E  43F9 0000191F            207      LEA CRLF, A1    ; load effective address of CRLF into A1
+00001124  6100 FF22                208      BSR PRINT_STR   ; use print subroutine to print message in A1, which is our Carriage return and line feed
+00001128                           209      
+00001128                           210      ; print day number, so "Day: X". X increases each day as day++
+00001128  43F9 00001332            211      LEA     MSG_DAY,A1      ; load address of Day message into A1
+0000112E  6100 FF18                212      BSR     PRINT_STR       ; use print function to display it
+00001132  4241                     213      CLR.W   D1              ; Again, clear D1
+00001134  1239 0000132A            214      MOVE.B  DAY,D1          ; Move the day count into D1
+0000113A  103C 0003                215      MOVE.B  #3,D0           ; Again, 3 into D0 so we can print a number in D1, in this case its the Day
+0000113E  4E4F                     216      TRAP    #15             ; kernal call to check instruction in D0
+00001140  43F9 0000191F            217      LEA     CRLF,A1         ; load address of carrirage return and line feed into A1, for a new line
+00001146  6100 FF00                218      BSR     PRINT_STR       ; print contents of A1, which is our new blank line to form a gap between messages
+0000114A                           219      
+0000114A                           220  
+0000114A                           221      ; random event chance each day except first
+0000114A  0C39 0003 0000132A       222      CMP.B   #3, DAY         ; if day is greater than day 3, then do a chance of random event
+00001152  6E00 0006                223      BGT     DO_RANDOM
+00001156  6000 000A                224      BRA     PRINT_DAY_MESSAGE
+0000115A                           225  
+0000115A                           226  
+0000115A                           227  
+0000115A                           228  DO_RANDOM:
+0000115A  6100 005A                229      BSR CHECK_RANDOM_EVENTS
+0000115E  6000 0002                230      BRA PRINT_DAY_MESSAGE
+00001162                           231   
+00001162                           232  PRINT_DAY_MESSAGE:
+00001162  43F9 00001DF5            233      LEA MSG_BEGIN_DAY,A1
+00001168  6100 FEDE                234      BSR PRINT_STR
+0000116C                           235      
+0000116C                           236  ; Check for player choice each day. Either 1 or 2 on keyboard input
+0000116C                           237  DAY_CHOICE:
+0000116C  103C 0004                238      MOVE.B  #4,D0          ; move 4 to D0. 4 is instruction to read keyboard input stored in D1, which should be either 1 or 2 depending on player choice
+00001170  4E4F                     239      TRAP    #15            ; D1 = input number, trap for kernal call to check instrunction in D0, which in this case is 4
+00001172                           240  
+00001172  B23C 0001                241      CMP.B   #1,D1          ; compare, check if value of D1 is 1.
+00001176  6700 0020                242      BEQ     DO_VENTURE     ; if it is 1, then player wants to go outside, so branch to venture subroutine
+0000117A                           243  
+0000117A  B23C 0002                244      CMP.B   #2,D1          ; compare again, this time if D1 value is 2, player wants to stay home and regen vigor
+0000117E  6700 000E                245      BEQ     DO_REST        ; if 2, branch to rest subroutine
+00001182                           246  
+00001182  43F9 0000133A            247      LEA     MSG_INVALID_CHOICE,A1   ; if neither 1 or 2, load address of Invalid choice message to D1
+00001188  6100 FEBE                248      BSR     PRINT_STR               ; print message with PRINT subroutine
+0000118C  60DE                     249      BRA     DAY_CHOICE              ; branch back to Day Choice to read input again 
+0000118E                           250  
+0000118E                           251  ; If player selected 2, they want to stay home and rest, this function lets us clear screen and then jump to rest day to prep for its messages
+0000118E                           252  DO_REST:
+0000118E  6100 FED0                253      BSR     CLEAR_SCREEN      ; clear screen before rest message
+00001192  6100 000E                254      BSR     REST_DAY          ; Branch to rest day subroutine
+00001196  4E75                     255      RTS                       ; return to subroutine
+00001198                           256  
+00001198                           257  ; If player selected 1, they want to venture out and scavenge. This function again is used to clear screen to make way for combat messages and jump to combat
+00001198                           258  DO_VENTURE:
+00001198  6100 FEC6                259      BSR     CLEAR_SCREEN      ; clear screen before rest message
+0000119C  6100 0116                260      BSR     COMBAT_DAY        ; branch to combat day subroutine
+000011A0  4E75                     261      RTS                       ; return to subroutine
+000011A2                           262      
+000011A2                           263  ;After screen is cleared, restore player vigor/health to 100
+000011A2                           264  REST_DAY:
+000011A2  13FC 0064 00001328       265      MOVE.B  #100,PLAYER_HEALTH  ; move 100 into health, overwriting previous value
+000011AA  43F9 0000135C            266      LEA     MSG_RESTED,A1       ; load address of rested message in A1
+000011B0  6100 FE96                267      BSR     PRINT_STR           ; jump to print subroutine to print the rest message
+000011B4  4E75                     268      RTS                         ; return to subroutine
+000011B6                           269      
+000011B6                           270  *--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+000011B6                           271  ; CHECK_RANDOM_EVENTS
+000011B6                           272  ; 20 % chance of mass loss per game. 30 % chance of lucky find per game. Once these events occur once, the flag is set, so we need to check the flag each time
+000011B6                           273  ; Using number in D0 from random number generated (0 to 99), we check if it is in range 0 - 19 to go to mass loss, or 20 - 49 for lucky event. 99 for instant game over 1 % chance. Using BHS to skip over and check next event
+000011B6                           274  ; as number is range 0 - 99, thats 100 numbers, so can pick a percentage chance based off what number it is
+000011B6                           275  ;
+000011B6                           276  ; 
+000011B6                           277  *--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+000011B6                           278  CHECK_RANDOM_EVENTS:
+000011B6  6100 FEB4                279      BSR     RANDOM_0_99     ; D0 will now contain a number of 0 - 99, based off time
+000011BA                           280      
+000011BA                           281      ; 1% break-in
+000011BA  B03C 0063                282      CMP.B   #99,D0          ; compare 99 to D0, if they are the same, branch if equal to break in event, instant game over
+000011BE  6700 00C0                283      BEQ     EVENT_BREAK_IN
+000011C2                           284  
+000011C2                           285      ; 20% chance mass loss (D0 equals number range 0 to 19), only once as checks flag
+000011C2  B03C 0014                286      CMP.B   #20,D0              ; compare number in D0 with 20
+000011C6  6400 0012                287      BHS     CHECK_LUCKY         ; BHS Branch if higher or same, to check for lucky event flag
+000011CA  4A39 00001330            288      TST.B   FLAG_REDUCE_MASS    ; test if mass event flag is 0, meaning has it occured yet? This is the else case of the compare
+000011D0  6600 0008                289      BNE     CHECK_LUCKY          ; if not equal, it means it has occured, then check if lucky event can occur
+000011D4  6100 001E                290      BSR     EVENT_REDUCE_MASS   ; else if equal, branch to the reduce mass subroutine
+000011D8  4E75                     291      RTS
+000011DA                           292  
+000011DA                           293  CHECK_LUCKY:
+000011DA                           294      ; 30% chance lucky find (range 20 to 49), can only occur once due to flag i set
+000011DA  B03C 0032                295      CMP.B   #50,D0                ; compare random number from D0 with 50
+000011DE  6400 0012                296      BHS     NO_EVENT              ; BHS = Branch if higher or Same. so if 50 or above, it is out of event scope, and we move to no event for rts
+000011E2  4A39 00001331            297      TST.B   FLAG_LUCKY_FIND       ; check if flag is = 0 if the number in D0 is less than 40
+000011E8  6600 0008                298      BNE     NO_EVENT              ; if flag is equal to 1, then event already occured, brnach to no event for rts
+000011EC  6100 002E                299      BSR     EVENT_LUCKY_FIND      ; if flag is 0, and if within event chance, branch to lucky find event subroutine
+000011F0  4E75                     300      RTS
+000011F2                           301  
+000011F2                           302  NO_EVENT:
+000011F2  4E75                     303      RTS                         ; if no event due to flags being set, rts to game loop again
+000011F4                           304      
+000011F4                           305  *--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+000011F4                           306  ;
+000011F4                           307  ; RANDOM DAILY EVENTS
+000011F4                           308  ; I need to be careful with these, so as not to allow mass or health to increase past 100, so i need to reset them if they do
+000011F4                           309  ; As discussed with philip, i will use a counter, or flag, that increases once an event occurs. These are initialised to 0. If the event occurs, increase flag by 1.
+000011F4                           310  ; Once the event flag for a specific event becomes 1, it can never happen again in that play through, preventing repeating events.
+000011F4                           311  ;
+000011F4                           312  *--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+000011F4                           313   
+000011F4                           314  ; mass loss random event   
+000011F4                           315  EVENT_REDUCE_MASS:
+000011F4  6100 FE6A                316      BSR CLEAR_SCREEN        ; branch to clear screen
+000011F8  43F9 000015A9            317      LEA MSG_MASS_LOSS, A1   ;Load event mass loss
+000011FE  6100 FE48                318      BSR PRINT_STR           ; print message
+00001202                           319      
+00001202                           320      ; reduce mass by 10
+00001202  1039 00001329            321      MOVE.B PLAYER_MASS, D0  ; move current mass to D0
+00001208  0400 000A                322      SUB.B #10, D0           ; SUBTRACT 10 from current mass in D0
+0000120C  13C0 00001329            323      MOVE.B D0, PLAYER_MASS  ; move newly updated mass back into variable
+00001212                           324      
+00001212  13FC 0001 00001330       325      MOVE.B #1, FLAG_REDUCE_MASS     ; set event flag to 1, as it has now occured
+0000121A                           326      
+0000121A                           327      
+0000121A  4E75                     328      RTS
+0000121C                           329    
+0000121C                           330  ; mass and health gain +10 each random event  
+0000121C                           331  EVENT_LUCKY_FIND:
+0000121C  6100 FE42                332      BSR CLEAR_SCREEN        ; branch to clear screen
+00001220  43F9 00001627            333      LEA MSG_LUCKY_FIND, A1  ; load lucky find event message
+00001226  6100 FE20                334      BSR PRINT_STR           ; print message
+0000122A                           335      
+0000122A                           336      ; add 10 to mass
+0000122A  1039 00001329            337      MOVE.B PLAYER_MASS, D0      ; move player mass to D0
+00001230  0600 000A                338      ADD.B   #10, D0             ; ADD 10 to D0, which currently holds mass
+00001234  13C0 00001329            339      MOVE.B  D0, PLAYER_MASS     ; move contents of D0, which is new mass, back into variable PLAYER_MASS to update it
+0000123A                           340      
+0000123A  0C39 0064 00001329       341      CMP.B #100, PLAYER_MASS     ; CHECK IF PLAYER MASS INCREASED BEYOND 100, if so its a problemo
+00001242  6E00 0028                342      BGT MASS_OVER_LOAD          ; if mass > 100, branch to subroutine to reduce it back to 100, as we increased by 10
+00001246                           343      
+00001246                           344      ; add 10 to vigor/health
+00001246  1039 00001328            345      MOVE.B PLAYER_HEALTH, D0    ; move player health to D0
+0000124C  0600 000A                346      ADD.B #10, D0               ; increase by 10
+00001250  13C0 00001328            347      MOVE.B D0, PLAYER_HEALTH    ; move contents of D0, whcih now hold new health, back into health variable
+00001256                           348      
+00001256  0C39 0064 00001328       349      CMP.B #100, PLAYER_HEALTH   ; check if health is greater than 100, to prevent overflow
+0000125E  6E00 0016                350      BGT HEALTH_OVER_LOAD        ; if health > 100, branch to subroutine to reduce it back to 100, as we increased by 10
+00001262                           351      
+00001262                           352  
+00001262  13FC 0001 00001331       353      MOVE.B #1, FLAG_LUCKY_FIND  ; set event flag to 1, as it has now occured
+0000126A                           354      
+0000126A  4E75                     355      RTS
+0000126C                           356      
+0000126C                           357  ;used only if mass exceeds 100 after event
+0000126C                           358  MASS_OVER_LOAD:
+0000126C  13FC 0064 00001329       359      MOVE.B #100, PLAYER_MASS    ; replace overloaded mass (probably 110 mass if you are here), with 100 (intented maximum)
+00001274  4E75                     360      RTS
+00001276                           361      
+00001276                           362      
+00001276                           363  ;used only if health exceeds 100 after event
+00001276                           364  HEALTH_OVER_LOAD:
+00001276  13FC 0064 00001328       365      MOVE.B #100, PLAYER_HEALTH    ; replace overloaded heath (probably 110 health if you are here), with 100 (intented maximum)
+0000127E  4E75                     366      RTS
+00001280                           367      
+00001280                           368  
+00001280                           369    
+00001280                           370  ; random event, killed in sleep at night
+00001280                           371  EVENT_BREAK_IN:
+00001280  6100 FDDE                372      BSR CLEAR_SCREEN            ; branch to clear screen
+00001284  43F9 00001744            373      LEA MSG_MURDER_EVENT, A1    ; Load effective message to murder message
+0000128A  6100 FDBC                374      BSR PRINT_STR               ; Print message using subroutine
+0000128E                           375      
+0000128E  6000 0094                376      BRA GAME_END               ; END GAME AS KILLED during night
+00001292                           377      
+00001292                           378  *--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+00001292                           379  ;
+00001292                           380  ; Beginning of AI assisted code:
+00001292                           381  ;
+00001292                           382  *--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+00001292                           383  
+00001292                           384      
+00001292                           385  ; Each day, enemy has different health, stored in ENEMY_HP_TABLE, basically an array
+00001292                           386  ; array starts from 0, not 1, as indexing. need to subtract 1 to get position in array.
+00001292                           387  ; we choose enemy health by day number, but array starts at 0, while day starts from 1. need to offset this
+00001292                           388  GET_ENEMY_HP:
+00001292  41F9 0000132B            389      LEA     ENEMY_HP_TABLE,A0   ; load effective address of enemy health array into A0. A0 will point to 55, first num in array
+00001298  7000                     390      MOVEQ   #0,D0               ; clearing D0 to prevent garbage like issue with player health and mass like before
+0000129A  1039 0000132A            391      MOVE.B  DAY,D0              ; move byte DAY counter into D0, which is now cleared. so load current day
+000012A0  5300                     392      SUBQ.B  #1,D0               ; subtract 1 from D0 because array counts from 0 onwards, not 1. index positioning.
+000012A2                           393  
+000012A2                           394  ;loop though array using D0, which is 0-4 index of array
+000012A2                           395  ;when loop finishes, A0 points to correct enemy health stat for the day, and D0 is equal to 0
+000012A2                           396  HP_LOOP:
+000012A2  4A00                     397      TST.B   D0                  ; test D0 to check if it is = 0, doesnt change D0, just checks and set zero flag
+000012A4  6700 0008                398      BEQ     HP_FOUND            ; branch if equal to HP_FOUND as we are already at correct index flag. loop exit conditon
+000012A8  5288                     399      ADDQ.L  #1,A0               ; increment A0 pointer by 1 byte. so incrementing moves pointer to next enemy health number in array
+000012AA  5300                     400      SUBQ.B  #1,D0               ; subtract D0 by 1, which is index counter, so if D0 = 3 here, it then subtracts 1 and becomes D0=2. Counting down to zero
+000012AC  60F4                     401      BRA     HP_LOOP             ; unconditional branch back into loop, remeber if d0 is = 0, thats the exit condition
+000012AE                           402      
+000012AE                           403  ;loop finds correct hp stat for enemy each day, once found, we must store it somewhere to be used for combat comparisons
+000012AE                           404  HP_FOUND:
+000012AE  7400                     405      MOVEQ   #0,D2               ; move quick immediate value into D2, sets all bits of D2 to zero, clearing it off any waste or garbage bytes
+000012B0  1410                     406      MOVE.B  (A0),D2             ; Move content of A0, which is current enemy health stat, into D2. so D2 = enemy hp
+000012B2  4E75                     407      RTS                         ; return to subroutine
+000012B4                           408      
+000012B4                           409      
+000012B4                           410  *--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+000012B4                           411  ;
+000012B4                           412  ; Ending of AI assisted code:
+000012B4                           413  ;
+000012B4                           414  *--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+000012B4                           415      
+000012B4                           416      
+000012B4                           417  ;If player chose to venture out, they will encounter an enemy. this is the combat sequence.
+000012B4                           418  ; to win, player must have higher vigor/health than the enemy. use compare to check.
+000012B4                           419  COMBAT_DAY:
+000012B4  43F9 00001417            420      LEA     MSG_COMBAT_INTRO,A1     ; load effective address of combat intro into A1
+000012BA  6100 FD8C                421      BSR     PRINT_STR               ; branch to print subroutine to display message
+000012BE                           422  
+000012BE  61D2                     423      BSR     GET_ENEMY_HP            ; branch to get enemy hp subroutine above, to select enemy vigor/hp based on day coutner
+000012C0                           424  
+000012C0                           425      ; Show enemy HP
+000012C0  43F9 00001564            426      LEA     MSG_ENEMY_HP,A1     ; load address of enemy hp message into a1
+000012C6  6100 FD80                427      BSR     PRINT_STR           ; use print subroutine to display it
+000012CA  4241                     428      CLR.W   D1                  ; clear d1 to prevent garbage
+000012CC  1202                     429      MOVE.B  D2,D1               ; move D2 to D1. D2 holds enemy hp from HP_lOOP and HP_Found function, must move to D1 to print
+000012CE  103C 0003                430      MOVE.B  #3,D0               ; move 3 to D0 for trap, prints number stored in D1
+000012D2  4E4F                     431      TRAP    #15                 ; kernal call to display enemy hp number which is now in D1
+000012D4  43F9 0000191F            432      LEA     CRLF,A1             ; load effecitve address of new line message to A1
+000012DA  6100 FD6C                433      BSR     PRINT_STR           ; use print to print the new blank line
+000012DE                           434  
+000012DE                           435      ; Compare: if player health > enemy health, then you defeat them
+000012DE  1039 00001328            436      MOVE.B  PLAYER_HEALTH,D0    ; move player vigor/health to D0
+000012E4  B002                     437      CMP.B   D2,D0               ; compare D2 with D0
+000012E6  6E00 0010                438      BGT     COMBAT_WIN          ; if d0/ player health is greater, branch if greater to combat win
+000012EA                           439  
+000012EA                           440      ; lose combat, you die and print death message.
+000012EA  43F9 0000281C            441      LEA     MSG_DEAD,A1         ; load death message game over
+000012F0  6100 FD56                442      BSR     PRINT_STR           ; print it with the subroutine
+000012F4  6000 002E                443      BRA     GAME_END            ; unconditional branch to game over, as now player is dead
+000012F8                           444    
+000012F8                           445  ;if player wins combat, increase mass but decrease health
+000012F8                           446  COMBAT_WIN:
+000012F8                           447      ; minus 10 helth when defeated enemy
+000012F8  1039 00001328            448      MOVE.B  PLAYER_HEALTH,D0    ;move player health to d0
+000012FE  0400 000A                449      SUB.B   #10,D0              ; subtract 10 from player health as you tookn damage from enemy
+00001302  13C0 00001328            450      MOVE.B  D0,PLAYER_HEALTH    ; move new health in D0 after subtraction back into PLAYER_HEALTH variable, overwriting it to reflect change
+00001308                           451  
+00001308                           452      ; gain 10 mass when defeated enemy
+00001308  1039 00001329            453      MOVE.B  PLAYER_MASS,D0      ; move player mass to D0
+0000130E  0600 000F                454      ADD.B   #15,D0              ; add 15 to increase current mass
+00001312  13C0 00001329            455      MOVE.B  D0,PLAYER_MASS      ; move new mass stored in D0 back into PLAYER_MASS variable, overwriting previous player mass
+00001318                           456  
+00001318  43F9 00001572            457      LEA     MSG_WIN_COMBAT,A1   ; load effective address of victory/survival message to A1
+0000131E  6100 FD28                458      BSR     PRINT_STR           ; branch to subroutine to print message to screen
+00001322  4E75                     459      RTS                         ; return to subroutine and begin next day
+00001324                           460      
+00001324                           461      
+00001324                           462  *--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+00001324                           463  ;
+00001324                           464  ; Game Over, I branch here after displaying appropriate endings to end program with SIMHAULT
+00001324                           465  ;
+00001324                           466  *--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+00001324                           467  
+00001324                           468  GAME_END:
+00001324  FFFF FFFF                469      SIMHALT                 ; end program
+00001328                           470  
+00001328                           471  
+00001328                           472  
+00001328                           473  
+00001328                           474  
+00001328                           475  *--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+00001328                           476  ;
+00001328                           477  ; Variables and Constants
+00001328                           478  ;
+00001328                           479  *--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+00001328                           480  
+00001328                           481  
+00001328= 01                       482  PLAYER_HEALTH: DC.B 1                   ; declare player vigor or health, this will be overwrited later
+00001329= 01                       483  PLAYER_MASS: DC.B 1                     ; declare player mass, this will be overwrited later
+0000132A                           484  
+0000132A= 01                       485  DAY: DC.B 1                             ; declare day counter, this will increase on each turn
+0000132B                           486  
+0000132B= 37 41 46 4B 55           487  ENEMY_HP_TABLE: DC.B 55,65,70,75,85     ; using an array of values for enemy health, as each day i want enemy health to be different. 
+00001330                           488  
+00001330= 00                       489  FLAG_REDUCE_MASS:   DC.B 0                ; flags used to prevent repeated random events, increase to 1 when/if event occurs
+00001331= 00                       490  FLAG_LUCKY_FIND:  DC.B 0
+00001332                           491  
+00001332                           492  
+00001332                           493  *--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+00001332                           494  ;
+00001332                           495  ; All Messages in Game are under here
+00001332                           496  ; $0D,$0A is used in messages to print new line carriage return and line feed, same as CRLF
+00001332                           497  ;
+00001332                           498  ;
+00001332                           499  *--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+00001332= 0D 0A 44 61 79 3A ...    500  MSG_DAY:             DC.B $0D,$0A,'Day: ',0
+0000133A                           501  
+0000133A= 0D 0A 49 6E 76 61 ...    502  MSG_INVALID_CHOICE:  DC.B $0D,$0A,'Invalid choice. Press 1 or 2.', $0D,$0A,0
+0000135C                           503  
+0000135C                           504  
+0000135C= 0D 0A                    505  MSG_RESTED:          DC.B $0D,$0A
+0000135E= 59 6F 75 20 63 68 ...    506                       DC.B 'You choose to stay in your safe house and gather your strenght for tomorrow. '
+000013AB= 0D 0A                    507                       DC.B $0D,$0A
+000013AD= 59 6F 75 20 74 65 ...    508                       DC.B 'You tend to you wounds and rest, watching the sunset as they day comes to an end'
+000013FD= 0D 0A                    509                       DC.B $0D,$0A
+000013FF= 56 69 67 6F 72 20 ...    510                       DC.B 'Vigor restored to 100'
+00001414= 0D 0A 00                 511                       DC.B $0D,$0A,0
+00001417                           512  
+00001417                           513  
+00001417                           514  ; Combat messages
+00001417= 0D 0A                    515  MSG_COMBAT_INTRO:   DC.B $0D,$0A
+00001419= 59 6F 75 20 76 65 ...    516                      DC.B 'You venture out and enter a ruined building. You head inside in search of more rescources as usual'
+0000147B= 0D 0A                    517                      DC.B $0D,$0A
+0000147D= 54 68 65 72 65 20 ...    518                      DC.B 'There is another scanvenger in here, you cant run, so you must stand your ground. He is already raising his weapon at you. '
+000014F8= 0D 0A                    519                      DC.B $0D,$0A
+000014FA= 48 65 20 77 69 6C ...    520                      DC.B 'He will surely land the first hit, but if you are in better shape, you should be able to defeat them...'
+00001561= 0D 0A 00                 521                      DC.B $0D,$0A,0
+00001564                           522  
+00001564                           523  
+00001564= 45 6E 65 6D 79 20 ...    524  MSG_ENEMY_HP:        DC.B 'Enemy Vigor: ',0
+00001572                           525  
+00001572= 0D 0A                    526  MSG_WIN_COMBAT:      DC.B $0D,$0A
+00001574= 59 6F 75 20 77 69 ...    527                       DC.B 'You win the fight. Mass +15, Vigor -10.'
+0000159B= 0D 0A 00                 528                       DC.B $0D,$0A,0
+0000159E                           529  
+0000159E                           530  *--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+0000159E                           531  ;
+0000159E                           532  ; Random event messages
+0000159E                           533  ;
+0000159E                           534  *--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+0000159E                           535  
+0000159E                           536  ; Debug message to make sure my random number works
+0000159E= 52 4E 47 20 72 6F ...    537  MSG_RNG: DC.B 'RNG roll: ',0
+000015A9                           538  
+000015A9                           539  
+000015A9                           540  ; Mass loss event message
+000015A9= 44 75 72 69 6E 67 ...    541  MSG_MASS_LOSS:  DC.B 'During the night, someone broke in. '
+000015CD= 0D 0A                    542                  DC.B $0D,$0A
+000015CF= 54 68 65 79 20 73 ...    543                  DC.B 'They scavenged your safehouse, and took what little they could find. '
+00001614= 0D 0A                    544                  DC.B $0D,$0A
+00001616= 4D 69 6E 75 73 20 ...    545                  DC.B 'Minus 10 mass.'
+00001624= 0D 0A 00                 546                  DC.B $0D,$0A, 0
+00001627                           547                  
+00001627                           548  ; Lucky find event message
+00001627= 59 6F 75 20 64 65 ...    549  MSG_LUCKY_FIND: DC.B 'You decided to take a look around your safe house. '
+0000165A= 0D 0A                    550                  DC.B $0D,$0A
+0000165C= 49 74 20 77 61 73 ...    551                  DC.B 'It was a good choice, as you have found some scrap you didnt think'
+0000169E= 0D 0A                    552                  DC.B $0D,$0A
+000016A0= 20 74 68 61 74 20 ...    553                  DC.B ' that you had, and fastened it to your armour. '
+000016CF= 0D 0A                    554                  DC.B $0D,$0A
+000016D1= 59 6F 75 20 61 6C ...    555                  DC.B 'You also found some extra food, allowing yourself '
+00001703= 0D 0A                    556                  DC.B $0D,$0A
+00001705= 74 6F 20 67 61 69 ...    557                  DC.B 'to gain back some strenght.'
+00001720= 0D 0A                    558                  DC.B $0D,$0A
+00001722= 50 6C 75 73 20 31 ...    559                  DC.B 'Plus 10 mass and Plus 10 Vigor '
+00001741= 0D 0A 00                 560                  DC.B $0D,$0A, 0
+00001744                           561                  
+00001744                           562  ; Murder event message
+00001744= 2A 2A 2A 2A 2A 2A ...    563  MSG_MURDER_EVENT: DC.B '********************************************************************************'
+00001794= 0D 0A                    564                    DC.B $0D,$0A
+00001796= 59 6F 75 20 74 68 ...    565                    DC.B 'You thought you locked the door...'
+000017B8= 0D 0A                    566                    DC.B $0D,$0A
+000017BA= 41 73 20 79 6F 75 ...    567                    DC.B 'As you were sleeping, someone came inside.'
+000017E4= 0D 0A                    568                    DC.B $0D,$0A
+000017E6= 54 68 65 79 20 6A ...    569                    DC.B 'They just wanted to take some of your scrap.'
+00001812= 0D 0A                    570                    DC.B $0D,$0A 
+00001814= 42 75 74 20 79 6F ...    571                    DC.B 'But you heard them, and they were left with one option.'
+0000184B= 0D 0A                    572                    DC.B $0D,$0A 
+0000184D= 54 68 65 79 20 6B ...    573                    DC.B 'They killed you to take what they need.'
+00001874= 0D 0A                    574                    DC.B $0D,$0A
+00001876= 20 20 20 20 20 20 ...    575                    DC.B '                            GAME OVER'
+0000189B= 0D 0A                    576                    DC.B $0D,$0A
+0000189D= 2A 2A 2A 2A 2A 2A ...    577                    DC.B '********************************************************************************'
+000018ED= 0D 0A 00                 578                    DC.B $0D,$0A, 0
+000018F0                           579                          
+000018F0                           580  
+000018F0                           581  
+000018F0                           582  ; gameover message with new line to keep tidy
+000018F0= 47 61 6D 65 20 4F ...    583  MSG_GAMEOVER: DC.B 'Game Over',$0D,$0A,0     ; Will always display this message on game end, and follow it with one of the following conditional endings below.
+000018FC                           584  
+000018FC                           585  ;Continue message, with new line aswell
+000018FC= 0D 0A                    586  MSG_CONTINUE:   DC.B $0D,$0A
+000018FE= 50 72 65 73 73 20 ...    587                  DC.B 'Press any button to continue. '
+0000191C= 0D 0A 00                 588                  DC.B $0D,$0A,0
+0000191F                           589  
+0000191F                           590  
+0000191F= 0D 0A 00                 591  CRLF:   DC.B    $0D,$0A,0   ;Carriage return, line feed. Used for new lines in between messages
+00001922                           592  
+00001922                           593  *--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+00001922                           594  ;
+00001922                           595  ; Game Begin messages
+00001922                           596  ;
+00001922                           597  *--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+00001922                           598  
+00001922                           599  ; Title Card to be displayed at very start of game
+00001922= 2A 2A 2A 2A 2A 2A ...    600  MSG_TITLECARD:  DC.B '********************************************************************************'
+00001972= 0D 0A                    601                  DC.B $0D,$0A
+00001974= 20 20 20 20 20 20 ...    602                  DC.B '                                IRON BOUND'
+0000199E= 0D 0A                    603                  DC.B $0D,$0A
+000019A0= 2A 2A 2A 2A 2A 2A ...    604                  DC.B '********************************************************************************'
+000019F0= 0D 0A                    605                  DC.B $0D,$0A
+000019F2= 0D 0A 00                 606                  DC.B $0D,$0A, 0
+000019F5                           607  
+000019F5                           608  
+000019F5                           609  ; Lore message to come after title card
+000019F5= 0D 0A                    610  MSG_GAME_START: DC.B $0D,$0A
+000019F7= 31 35 20 79 65 61 ...    611                  DC.B '15 years ago, the planet reached its limit.' 
+00001A22= 59 65 61 72 73 20 ...    612                  DC.B 'Years of extraction of resources from the planets crust have finally caught up. '
+00001A72= 0D 0A                    613                  DC.B $0D,$0A
+00001A74= 54 68 65 20 67 72 ...    614                  DC.B 'The gravity started to wane, and now it isnt strong enough to keep you held down.'
+00001AC5= 0D 0A                    615                  DC.B $0D,$0A
+00001AC7= 4D 6F 73 74 20 70 ...    616                  DC.B 'Most people have floated away into the sky above, never to return.'
+00001B09= 0D 0A                    617                  DC.B $0D,$0A
+00001B0B= 59 6F 75 2C 20 61 ...    618                  DC.B 'You, and those others remaining, have survived by fastening heavy scrap into'
+00001B57= 0D 0A                    619                  DC.B $0D,$0A
+00001B59= 61 72 6D 6F 72 20 ...    620                  DC.B 'armor that can keep you weighed down enough,'
+00001B85= 0D 0A                    621                  DC.B $0D,$0A
+00001B87= 68 6F 77 65 76 65 ...    622                  DC.B 'however resources are running out. '
+00001BAA= 0D 0A                    623                  DC.B $0D,$0A
+00001BAC= 54 68 6F 73 65 20 ...    624                  DC.B 'Those left fight for scraps, anything they can take to hold themselves down. '
+00001BF9= 0D 0A                    625                  DC.B $0D,$0A
+00001BFB= 54 68 65 72 65 20 ...    626                  DC.B 'There are rumors of a band of survivors, iron-clad in scrapmetal, '
+00001C3D= 0D 0A                    627                  DC.B $0D,$0A 
+00001C3F= 77 68 6F 20 72 6F ...    628                  DC.B 'who roam the wasteland and protect their own.'
+00001C6C= 0D 0A                    629                  DC.B $0D,$0A
+00001C6E= 4D 61 79 62 65 20 ...    630                  DC.B 'Maybe if you can fashion a suit of armour like theirs, they will let you join them?'
+00001CC1= 0D 0A                    631                  DC.B $0D,$0A
+00001CC3= 4F 72 20 6D 61 79 ...    632                  DC.B 'Or maybe, someone may come for your resources and leave you unable to keep yourself grounded.'
+00001D20= 0D 0A                    633                  DC.B $0D,$0A
+00001D22= 0D 0A                    634                  DC.B $0D,$0A
+00001D24= 0D 0A 00                 635                  DC.B $0D,$0A, 0
+00001D27                           636                  
+00001D27                           637  ; Display game objective, after title card. From here we will start day 1.
+00001D27                           638  
+00001D27= 0D 0A                    639  MSG_OBJECTIVE:  DC.B $0D,$0A
+00001D29= 45 78 70 6C 6F 72 ...    640                  DC.B 'Explore the wasteland and collect scrapmetal to weigh yourself down. '
+00001D6E= 0D 0A                    641                  DC.B $0D,$0A
+00001D70= 49 66 20 79 6F 75 ...    642                  DC.B 'If your mass drops below 40 before the end of day 5, then you are doomed. You have 5 days.'
+00001DCA= 0D 0A 00                 643                  DC.B $0D,$0A, 0
+00001DCD                           644                  
+00001DCD                           645  *--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+00001DCD                           646  ;
+00001DCD                           647  ;   Game Loop basic messages for each day
+00001DCD                           648  ;
+00001DCD                           649  *--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+00001DCD                           650  
+00001DCD                           651  ; display mass and display health status messages
+00001DCD                           652  
+00001DCD= 0D 0A 43 75 72 72 ...    653  MSG_STATUS: DC.B $0D,$0A,'Current Status: ', $0D,$0A,0
+00001DE2= 0D 0A 4D 61 73 73 ...    654  MSG_MASS: DC.B $0D,$0A,'Mass: ',0
+00001DEB= 0D 0A 56 69 67 6F ...    655  MSG_HEALTH: DC.B $0D,$0A,'Vigor: ',0
+00001DF5                           656     
+00001DF5                           657    ; Start the first day with a choice
+00001DF5= 0D 0A                    658  MSG_BEGIN_DAY: DC.B $0D,$0A
+00001DF7= 2A 2A 2A 2A 2A 2A ...    659                  DC.B '********************************************************************************' 
+00001E47= 0D 0A                    660                  DC.B $0D,$0A
+00001E49= 54 68 65 20 73 75 ...    661                  DC.B 'The sun rises yet again.'
+00001E61= 0D 0A                    662                  DC.B $0D,$0A
+00001E63= 0D 0A                    663                  DC.B $0D,$0A
+00001E65= 59 6F 75 20 77 61 ...    664                  DC.B 'You wake up hungry and tired as usual. '
+00001E8C= 0D 0A                    665                  DC.B $0D,$0A
+00001E8E= 59 6F 75 20 62 65 ...    666                  DC.B 'You better decide if you want to venture out and search for more scrap.'
+00001ED5= 0D 0A                    667                  DC.B $0D,$0A
+00001ED7= 20 41 66 74 65 72 ...    668                  DC.B ' Afterall, you feel as if you get lighter by the day. '
+00001F0D= 0D 0A                    669                  DC.B $0D,$0A
+00001F0F= 59 6F 75 20 63 6F ...    670                  DC.B 'You could also stay at home, and rest to gather your strength. '
+00001F4E= 0D 0A                    671                  DC.B $0D,$0A
+00001F50= 41 66 74 65 72 61 ...    672                  DC.B 'Afterall, who knows what challenges you could face tomorrow? '
+00001F8D= 0D 0A                    673                  DC.B $0D,$0A
+00001F8F= 4D 61 6B 65 20 79 ...    674                  DC.B 'Make your choice. Press 1 to venture out or press 2 to gather your strength for tomorrow. '
+00001FE9= 0D 0A                    675                  DC.B $0D,$0A
+00001FEB= 2A 2A 2A 2A 2A 2A ...    676                  DC.B '********************************************************************************'
+0000203B= 0D 0A 00                 677                  DC.B $0D,$0A, 0
+0000203E                           678     
+0000203E                           679  *--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+0000203E                           680  ;
+0000203E                           681  ;   Conditional ending messages, depends on ending stats
+0000203E                           682  ;
+0000203E                           683  *--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+0000203E                           684  
+0000203E                           685  ;   If mass is less than 40 at the end of any day
+0000203E= 2A 2A 2A 2A 2A 2A ...    686  MSG_BADENDING: DC.B '********************************************************************************'
+0000208E= 0D 0A                    687                 DC.B $0D,$0A
+00002090= 20 20 20 20 20 20 ...    688                 DC.B '                               GAME OVER'
+000020B8= 0D 0A                    689                 DC.B $0D,$0A
+000020BA= 20 20 20 20 20 20 ...    690                 DC.B '                               Bad Ending: '
+000020E5= 0D 0A                    691                 DC.B $0D,$0A
+000020E7= 59 6F 75 20 68 61 ...    692                 DC.B 'You have fought hard for your freedom, however '
+00002116= 77 68 61 74 20 6C ...    693                 DC.B 'what little scrap you could find to weld together into weighted boots wasnt enough. '
+0000216A= 0D 0A                    694                 DC.B $0D,$0A
+0000216C= 59 6F 75 20 63 61 ...    695                 DC.B 'You can feel the weight leave your body as you slowly begin to float upwards. '
+000021BA= 0D 0A                    696                 DC.B $0D,$0A
+000021BC= 4D 61 79 62 65 20 ...    697                 DC.B 'Maybe if you didnt go outside to watch the sunset tonight, '
+000021F7= 0D 0A                    698                 DC.B $0D,$0A
+000021F9= 79 6F 75 20 77 6F ...    699                 DC.B 'you would have been lucky enough to hit the roof, '
+0000222B= 62 75 74 20 74 68 ...    700                 DC.B 'but the sky above you now offers no net to catch you. '
+00002261= 0D 0A                    701                 DC.B $0D,$0A
+00002263= 59 6F 75 20 61 72 ...    702                 DC.B 'You are are doomed to be forgotten in the toxic atmosphere above. '
+000022A5= 0D 0A                    703                 DC.B $0D,$0A
+000022A7= 2A 2A 2A 2A 2A 2A ...    704                 DC.B '********************************************************************************', 0
+000022F8                           705  
+000022F8                           706  
+000022F8                           707  
+000022F8                           708  ;   If mass is above or equal to 75 after day 5
+000022F8= 2A 2A 2A 2A 2A 2A ...    709  MSG_GOODENDING: DC.B '********************************************************************************'
+00002348= 0D 0A                    710                 DC.B $0D,$0A
+0000234A= 20 20 20 20 20 20 ...    711                 DC.B '                               GAME OVER'
+00002372= 0D 0A                    712                 DC.B $0D,$0A
+00002374= 20 20 20 20 20 20 ...    713                 DC.B '                              Good Ending: '
+0000239F= 0D 0A                    714                 DC.B $0D,$0A
+000023A1= 59 6F 75 20 68 61 ...    715                 DC.B 'You have done it, you have gathered enough scrap to fasten a '
+000023DE= 0D 0A                    716                 DC.B $0D,$0A
+000023E0= 73 75 69 74 20 68 ...    717                 DC.B 'suit heavy enough to keep you on the ground.'
+0000240C= 0D 0A                    718                 DC.B $0D,$0A
+0000240E= 59 6F 75 20 68 61 ...    719                 DC.B 'You have heard stories in the wasteland of a group of people '
+0000244B= 0D 0A                    720                 DC.B $0D,$0A
+0000244D= 77 68 6F 20 77 61 ...    721                 DC.B 'who walk in iron suits, a brotherhood of sorts. '
+0000247D= 0D 0A                    722                 DC.B $0D,$0A
+0000247F= 4E 6F 77 20 79 6F ...    723                 DC.B 'Now you can head out and search for them, perhaps they will take you '
+000024C4= 0D 0A                    724                 DC.B $0D,$0A
+000024C6= 69 6E 20 73 6F 20 ...    725                 DC.B 'in so that you may finally have safe company in this god forsaken reality.'
+00002510= 0D 0A                    726                 DC.B $0D,$0A
+00002512= 59 6F 75 20 73 68 ...    727                 DC.B 'You should head out tomorrow morning, take what you can and start a new life with purpose.'
+0000256C= 0D 0A                    728                 DC.B $0D,$0A
+0000256E= 2A 2A 2A 2A 2A 2A ...    729                 DC.B '********************************************************************************', 0
+000025BF                           730                 
+000025BF                           731  ;   If mass is above or equal to 40 but less than 85 on day 5
+000025BF= 2A 2A 2A 2A 2A 2A ...    732  MSG_NEUTRALEND: DC.B '********************************************************************************'
+0000260F= 0D 0A                    733                 DC.B $0D,$0A
+00002611= 20 20 20 20 20 20 ...    734                 DC.B '                               GAME OVER'
+00002639= 0D 0A                    735                 DC.B $0D,$0A
+0000263B= 20 20 20 20 20 20 ...    736                 DC.B '                             Neutral Ending: '
+00002668= 0D 0A                    737                 DC.B $0D,$0A
+0000266A= 59 6F 75 20 6D 61 ...    738                 DC.B 'You managed to gather what you could and fasten your boots to be heavy enough to weigh you down. '
+000026CB= 0D 0A                    739                 DC.B $0D,$0A
+000026CD= 59 6F 75 20 77 6F ...    740                 DC.B 'You wont float away into an endless void, but now there is no one left but you. '
+0000271D= 0D 0A                    741                 DC.B $0D,$0A
+0000271F= 57 68 61 74 20 69 ...    742                 DC.B 'What is the point of this struggle if you cant share it with another soul? '
+0000276A= 0D 0A                    743                 DC.B $0D,$0A
+0000276C= 49 74 20 73 65 65 ...    744                 DC.B 'It seems you are doomed to live your life in this wasteland, barely held down to the ground. '
+000027C9= 0D 0A                    745                 DC.B $0D,$0A
+000027CB= 2A 2A 2A 2A 2A 2A ...    746                 DC.B '********************************************************************************', 0
+0000281C                           747  
+0000281C                           748  ;   If you are killed by an enemy
+0000281C= 2A 2A 2A 2A 2A 2A ...    749  MSG_DEAD: DC.B '********************************************************************************'
+0000286C= 0D 0A                    750                 DC.B $0D,$0A
+0000286E= 20 20 20 20 20 20 ...    751                 DC.B '                               GAME OVER'
+00002896= 0D 0A                    752                 DC.B $0D,$0A
+00002898= 59 6F 75 20 68 61 ...    753                 DC.B 'You have been killed by another scavenger: '
+000028C3= 0D 0A                    754                 DC.B $0D,$0A
+000028C5= 59 6F 75 20 64 65 ...    755                 DC.B 'You delved too deep, and met someone stronger than you. '
+000028FD= 0D 0A                    756                 DC.B $0D,$0A
+000028FF= 49 74 20 77 61 73 ...    757                 DC.B 'It was kill or be killed, you understood that. '
+0000292E= 0D 0A                    758                 DC.B $0D,$0A
+00002930= 4D 61 79 62 65 20 ...    759                 DC.B 'Maybe your opponent was like you, struggling to survive.'
+00002968= 0D 0A                    760                 DC.B $0D,$0A
+0000296A= 41 74 20 6C 65 61 ...    761                 DC.B 'At least your gear may help them, until someone else comes along to take what '
+000029B8= 0D 0A                    762                 DC.B $0D,$0A
+000029BA= 69 73 20 74 68 65 ...    763                 DC.B 'is theirs, as they have done to you.'
+000029DE= 0D 0A                    764                 DC.B $0D,$0A
+000029E0= 2A 2A 2A 2A 2A 2A ...    765                 DC.B '********************************************************************************', 0
+00002A31                           766                 
+00002A31                           767                 
+00002A31                           768      END    START        ; last line of source
+
+No errors detected
+No warnings generated
+
+
+SYMBOL TABLE INFORMATION
+Symbol-name         Value
+-------------------------
+CHECK_LUCKY         11DA
+CHECK_RANDOM_EVENTS  11B6
+CLEAR_SCREEN        1060
+COMBAT_DAY          12B4
+COMBAT_WIN          12F8
+CONTINUE            1050
+CRLF                191F
+DAY                 132A
+DAY_CHOICE          116C
+DAY_LOOP            1080
+DO_RANDOM           115A
+DO_REST             118E
+DO_VENTURE          1198
+END_BAD_FLOAT       10AA
+END_GOOD            10D2
+END_RESOLVE         10B6
+ENEMY_HP_TABLE      132B
+EVENT_BREAK_IN      1280
+EVENT_LUCKY_FIND    121C
+EVENT_REDUCE_MASS   11F4
+FLAG_LUCKY_FIND     1331
+FLAG_REDUCE_MASS    1330
+GAME_END            1324
+GAME_LOOP           1080
+GET_ENEMY_HP        1292
+HEALTH_OVER_LOAD    1276
+HP_FOUND            12AE
+HP_LOOP             12A2
+MASS_OVER_LOAD      126C
+MSG_BADENDING       203E
+MSG_BEGIN_DAY       1DF5
+MSG_COMBAT_INTRO    1417
+MSG_CONTINUE        18FC
+MSG_DAY             1332
+MSG_DEAD            281C
+MSG_ENEMY_HP        1564
+MSG_GAMEOVER        18F0
+MSG_GAME_START      19F5
+MSG_GOODENDING      22F8
+MSG_HEALTH          1DEB
+MSG_INVALID_CHOICE  133A
+MSG_LUCKY_FIND      1627
+MSG_MASS            1DE2
+MSG_MASS_LOSS       15A9
+MSG_MURDER_EVENT    1744
+MSG_NEUTRALEND      25BF
+MSG_OBJECTIVE       1D27
+MSG_RESTED          135C
+MSG_RNG             159E
+MSG_STATUS          1DCD
+MSG_TITLECARD       1922
+MSG_WIN_COMBAT      1572
+NO_EVENT            11F2
+PLAYER_HEALTH       1328
+PLAYER_MASS         1329
+PRINT_DAY_MESSAGE   1162
+PRINT_STR           1048
+RANDOM_0_99         106C
+REST_DAY            11A2
+START               1000
+START_DAY           10E0
+WELCOME             1020
